@@ -1,0 +1,6 @@
+numpy>=1.22.0
+scipy>=1.8.0
+scikit-learn>=1.0.0
+lightgbm>=3.3.0
+rapidfuzz>=3.0.0
+sparse-dot-topn==1.1.5
