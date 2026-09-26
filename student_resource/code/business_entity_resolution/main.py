@@ -52,8 +52,8 @@ def main():
     parser.add_argument(
         "--top-k",
         type=int,
-        default=15,
-        help="Maximum candidates per Source 1 entity in blocking stage (default: 15)"
+        default=25,
+        help="Maximum candidates per Source 1 entity in blocking stage (default: 25)"
     )
 
     args = parser.parse_args()

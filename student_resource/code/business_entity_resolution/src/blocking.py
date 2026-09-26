@@ -50,10 +50,10 @@ class BlockingEngine:
         )
 
         C = self.vectorizer.transform(cand_docs).tocsr()
-        # Filter out words that appear in > 0.5% of all candidates (stop words like 'inc', 'llc')
-        # This makes the matrix incredibly sparse, turning a 17-hour multiplication into minutes.
+        # Filter out words that appear in > 3% of all candidates (ubiquitous stop words)
+        # Keeps domain-specific business nouns and distinctive 3-grams.
         doc_freq = np.bincount(C.indices, minlength=self.max_features)
-        self.allowed_features = doc_freq <= max(1, int(C.shape[0] * 0.005))
+        self.allowed_features = doc_freq <= max(1, int(C.shape[0] * 0.03))
         C.data[~self.allowed_features[C.indices]] = 0.0
         C.eliminate_zeros()
         normalize(C, norm='l2', copy=False)
@@ -63,12 +63,13 @@ class BlockingEngine:
 
     def build_auxiliary_indices(self, cand_records: dict):
         """
-        Build fast in-memory hash tables for exact name, compact name,
+        Build fast in-memory hash tables for exact name, legal stem, compact name,
         rare/selective name tokens, and address anchor matching.
         Guarantees high candidate recall even on corrupted or noisy records.
         """
         from collections import defaultdict
         from .preprocess import STOP_WORDS, extract_numbers
+        from .features import strip_legal_suffixes
 
         word_freq = defaultdict(int)
         for cid, (cn, ca) in cand_records.items():
@@ -78,6 +79,7 @@ class BlockingEngine:
                     word_freq[w] += 1
 
         self.exact_name_index = defaultdict(list)
+        self.legal_stem_index = defaultdict(list)
         self.compact_name_index = defaultdict(list)
         self.selective_name_index = defaultdict(list)
         self.addr_anchor_index = defaultdict(list)
@@ -85,13 +87,17 @@ class BlockingEngine:
         for cid, (cn, ca) in cand_records.items():
             if cn:
                 self.exact_name_index[cn].append(cid)
+                stem = strip_legal_suffixes(cn)
+                if len(stem) >= 3 and stem != cn:
+                    self.legal_stem_index[stem].append(cid)
+
                 cp = cn.replace(' ', '')
                 if len(cp) >= 4:
                     self.compact_name_index[cp].append(cid)
 
                 words = set(w for w in cn.split() if w not in STOP_WORDS and len(w) >= 3)
                 for w in words:
-                    if 1 <= word_freq[w] <= 40:
+                    if 1 <= word_freq[w] <= 80:
                         self.selective_name_index[w].append(cid)
 
             if ca:
@@ -106,10 +112,11 @@ class BlockingEngine:
         Vectorize S1 records and compute dot-product with candidate matrix.
         Accepts pre-computed s1_docs or falls back to on-the-fly preprocessing.
         If s1_precleaned is provided, blends TF-IDF candidates with exact name,
-        compact name, selective rare name tokens, and address anchor indices.
+        legal stem, compact name, selective rare name tokens, and address anchor indices.
         Returns a dictionary: {s1_id: [(cand_id, score, rank), ...]}
         """
         from .preprocess import STOP_WORDS
+        from .features import strip_legal_suffixes
 
         n_queries = len(s1_records_or_ids)
         results = {}
@@ -177,6 +184,15 @@ class BlockingEngine:
                             if cid not in seen_cids:
                                 top_cands.append((cid, 1.0, 0))
                                 seen_cids.add(cid)
+
+                    # 1b. Legal Stem Matches (e.g. Inc vs Corp vs LLC)
+                    if hasattr(self, 'legal_stem_index'):
+                        stem1 = strip_legal_suffixes(cn1)
+                        if len(stem1) >= 3 and stem1 in self.legal_stem_index:
+                            for cid in self.legal_stem_index[stem1][:40]:
+                                if cid not in seen_cids:
+                                    top_cands.append((cid, 0.98, 0))
+                                    seen_cids.add(cid)
 
                     # 2. Compact Name Matches (handles spaces, hyphens, prefixes)
                     if hasattr(self, 'compact_name_index') and len(cp1) >= 4 and cp1 in self.compact_name_index:

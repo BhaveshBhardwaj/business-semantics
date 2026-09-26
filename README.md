@@ -75,10 +75,10 @@ pip install -r code/business_entity_resolution/requirements.txt
 Train the pairwise XGBoost model on GPU with Optuna Bayesian optimization:
 ```bash
 # High-speed rapid training (~4 mins):
-python code/business_entity_resolution/train_model.py --sample-entities 35000 --tune --n-trials 20 --clear-cache
+python code/business_entity_resolution/train_model.py --sample-entities 35000 --tune --n-trials 10 --clear-cache
 
-# Full 10% slice training (~40 mins):
-python code/business_entity_resolution/train_model.py --sample-frac 0.1 --max-cands 500000 --tune --n-trials 30 --clear-cache
+# Full 10% slice training (~25 mins):
+python code/business_entity_resolution/train_model.py --sample-frac 0.1 --max-cands 500000 --tune --n-trials 10 --clear-cache
 ```
 
 ### 3. Generate Submission Predictions

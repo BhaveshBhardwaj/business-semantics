@@ -24,7 +24,7 @@ from train_model import compute_full_metrics, pbar
 
 def main():
     parser = argparse.ArgumentParser(description="Optuna Hyperparameter Tuning for Entity Resolution")
-    parser.add_argument("--n-trials", type=int, default=30, help="Number of Optuna trials (default: 30)")
+    parser.add_argument("--n-trials", type=int, default=10, help="Number of Optuna trials (default: 10)")
     parser.add_argument("--timeout", type=int, default=None, help="Stop study after the given number of seconds")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
     parser.add_argument("--output", type=str, default=os.path.join(base_dir, "models", "best_xgb_params.json"),

@@ -143,8 +143,8 @@ def main():
                         help="Clear the feature chunks cache")
     parser.add_argument("--tune", action="store_true", default=False,
                         help="Run Optuna Bayesian hyperparameter optimization before training")
-    parser.add_argument("--n-trials", type=int, default=30,
-                        help="Number of Optuna tuning trials if --tune is set (default: 30)")
+    parser.add_argument("--n-trials", type=int, default=10,
+                        help="Number of Optuna tuning trials if --tune is set (default: 10)")
     parser.add_argument("--ignore-tuned", action="store_true", default=False,
                         help="Ignore saved tuned parameters in models/best_xgb_params.json")
     args = parser.parse_args()
@@ -152,7 +152,7 @@ def main():
     print("=" * 90)
     print("  FULL-DATA BUSINESS ENTITY RESOLUTION TRAINING PIPELINE")
     backend = "LightGBM CPU" if args.cpu_only else "XGBoost GPU (RTX 4050)"
-    print(f"  Target: Macro F_0.5 >= 0.999 | {backend} | 28-Feature Pairwise Classifier")
+    print(f"  Target: Macro F_0.5 >= 0.999 | {backend} | {len(FEATURE_NAMES)}-Feature Pairwise Classifier")
     print(f"  Max candidates: {args.max_cands:,} (GT always included) | RAM-safe mode")
     print("=" * 90)
     t_global = time.time()
@@ -342,7 +342,7 @@ def main():
     # =========================================================================
     # STAGE 5: Extract Feature Matrices (Streaming)
     # =========================================================================
-    print(f"\n[5/7] Extracting 28-Feature Pairwise Matrices (with Hard Negative Mining)...", flush=True)
+    print(f"\n[5/7] Extracting {len(FEATURE_NAMES)}-Feature Pairwise Matrices (with Hard Negative Mining)...", flush=True)
     t0 = time.time()
 
     def build_feature_matrix(entity_ids, is_training, desc_label):
@@ -363,18 +363,19 @@ def main():
             b_end = min(b_start + batch_size_query, n_total)
             chunk_file = os.path.join(cache_dir, f"chunk_{b_start}_{b_end}.pkl")
             
-            if os.path.exists(chunk_file):
+            if not args.clear_cache and os.path.exists(chunk_file):
                 try:
                     with open(chunk_file, 'rb') as f:
                         c_data = pickle.load(f)
-                    chunk_X_list.append(np.asarray(c_data['X'], dtype=np.float32))
-                    chunk_y_list.append(np.asarray(c_data['y'], dtype=np.int32))
-                    if not is_training:
-                        pair_info.extend(c_data['pair_info'])
-                    recall_hits += c_data['recall_hits']
-                    recall_total += c_data['recall_total']
-                    pb_outer.update(b_end - b_start)
-                    continue
+                    if c_data['X'].shape[1] == len(FEATURE_NAMES):
+                        chunk_X_list.append(np.asarray(c_data['X'], dtype=np.float32))
+                        chunk_y_list.append(np.asarray(c_data['y'], dtype=np.int32))
+                        if not is_training:
+                            pair_info.extend(c_data['pair_info'])
+                        recall_hits += c_data['recall_hits']
+                        recall_total += c_data['recall_total']
+                        pb_outer.update(b_end - b_start)
+                        continue
                 except Exception as e:
                     print(f"\n  [WARNING] Failed to load chunk cache {chunk_file}: {e}")
 
@@ -420,7 +421,7 @@ def main():
                     c_total += len(true_set)
                     c_hits += len(true_set & retrieved_ids)
             
-            arr_X = np.asarray(cX, dtype=np.float32) if cX else np.empty((0, 28), dtype=np.float32)
+            arr_X = np.asarray(cX, dtype=np.float32) if cX else np.empty((0, len(FEATURE_NAMES)), dtype=np.float32)
             arr_y = np.asarray(cy, dtype=np.int32) if cy else np.empty(0, dtype=np.int32)
             
             # Save chunk to disk as compact numpy arrays
@@ -443,7 +444,7 @@ def main():
             pb_outer.update(b_end - b_start)
 
         pb_outer.close()
-        X = np.vstack(chunk_X_list) if chunk_X_list else np.empty((0, 28), dtype=np.float32)
+        X = np.vstack(chunk_X_list) if chunk_X_list else np.empty((0, len(FEATURE_NAMES)), dtype=np.float32)
         y = np.concatenate(chunk_y_list) if chunk_y_list else np.empty(0, dtype=np.int32)
         del chunk_X_list, chunk_y_list
         gc.collect()

@@ -67,7 +67,7 @@ def partition_test_files_by_country(test_dir: str, tmp_dir: str):
     print(f"Partitioning completed in {time.time() - t0:.1f}s across {len(countries)} country labels.", flush=True)
     return [(country, country_index[country]) for country in countries]
 
-def run_pipeline(test_dir: str, output_dir: str, model_path: str, threshold: float = 0.65, top_k: int = 15):
+def run_pipeline(test_dir: str, output_dir: str, model_path: str, threshold: float = 0.65, top_k: int = 25):
     """
     Run end-to-end inference over all test source files.
     Generates:
@@ -152,7 +152,7 @@ def run_pipeline(test_dir: str, output_dir: str, model_path: str, threshold: flo
         # 2. Build Blocking Index for this country using generator
         print(f"[{country}] Fitting TF-IDF Blocking Index...", flush=True)
         t_fit = time.time()
-        blocking = BlockingEngine(top_k=top_k, min_score=0.05)
+        blocking = BlockingEngine(top_k=top_k, min_score=0.03)
         
         def cand_doc_generator():
             for cid in cand_ids:
@@ -263,8 +263,16 @@ def _process_batch_fast(s1_batch, blocking, cand_records, matching_model, thresh
         X_mat = np.array(feature_rows, dtype=np.float32)
         probs = matching_model.predict_proba(X_mat)
 
-        for (s1_id, cid), prob in zip(all_pairs, probs):
+        for (s1_id, cid), prob, feat in zip(all_pairs, probs, feature_rows):
             if prob >= threshold:
+                # Precision safeguard: reject spurious address-only matches with completely disjoint names
+                if feat[34] == 1.0:
+                    continue
+                if feat[5] == 0 and feat[1] < 55 and feat[20] < 0.35:
+                    continue
+                # Reject geographical postal code conflicts unless exact name match
+                if feat[5] == 0 and feat[31] == -1.0 and feat[1] < 90:
+                    continue
                 match_dict[s1_id].append(cid)
 
     # 5. Write to files

@@ -1,12 +1,31 @@
-"""
-Feature Engineering Module for Entity Matching.
-Extracts rich pairwise fuzzy string similarities, token overlap metrics,
-numeric/address consistency, and blocking signals from pre-cleaned representations.
-"""
-
+import re
 import numpy as np
 import rapidfuzz.fuzz as fuzz
 from .preprocess import extract_numbers
+
+RE_POSTAL = re.compile(r'\b\d{5,6}\b')
+
+LEGAL_TERMS = {
+    'inc', 'corp', 'corporation', 'llp', 'ltd', 'limited', 'pvt', 'private',
+    'co', 'company', 'services', 'enterprises', 'associates', 'group', 'holdings',
+    'sa', 'sarl', 'sasu', 'sci', 'sas', 'eurl', 'cie', 'gmbh', 'llc', 'plc'
+}
+
+def strip_legal_suffixes(name: str) -> str:
+    words = [w for w in name.split() if w not in LEGAL_TERMS]
+    return " ".join(words)
+
+def extract_postal_code(text: str) -> set:
+    if not text:
+        return set()
+    return set(RE_POSTAL.findall(text))
+
+def is_latin_text(s: str) -> bool:
+    try:
+        s.encode('latin-1')
+        return True
+    except UnicodeEncodeError:
+        return False
 
 def _char_3grams(s: str) -> set:
     if len(s) < 3:
@@ -41,7 +60,15 @@ FEATURE_NAMES = [
     'length_ratio',
     'addr_ratio',
     'addr_num_exact',
-    'token_count_diff'
+    'token_count_diff',
+    'name_legal_stem_exact',
+    'name_legal_stem_ratio',
+    'addr_char_3gram_jaccard',
+    'postal_code_match',
+    'first_two_words_match',
+    'exact_name_and_addr',
+    'is_latin_disjoint',
+    'high_name_no_addr'
 ]
 
 def extract_pair_features_fast(s1_item, c_item, cid: str, blocking_score: float, blocking_rank: int):
@@ -96,11 +123,25 @@ def extract_pair_features_fast(s1_item, c_item, cid: str, blocking_score: float,
         union_a = len(at1 | at2)
         addr_jaccard = len(at1 & at2) / union_a if union_a > 0 else 0.0
         addr_len_diff = float(abs(len(ca1) - len(ca2)))
+
+        ga1 = _char_3grams(ca1)
+        ga2 = _char_3grams(ca2)
+        u_ga = len(ga1 | ga2)
+        addr_char_3gram_jaccard = len(ga1 & ga2) / u_ga if u_ga > 0 else 0.0
+
+        post1 = extract_postal_code(ca1)
+        post2 = extract_postal_code(ca2)
+        if post1 and post2:
+            postal_code_match = 1.0 if (post1 & post2) else -1.0
+        else:
+            postal_code_match = 0.0
     else:
         addr_token_set_ratio = 0.0
         addr_ratio = 0.0
         addr_jaccard = 0.0
         addr_len_diff = 0.0
+        addr_char_3gram_jaccard = 0.0
+        postal_code_match = 0.0
 
     # 3. Numeric consistency
     common_nums = nums1 & nums2
@@ -125,6 +166,19 @@ def extract_pair_features_fast(s1_item, c_item, cid: str, blocking_score: float,
     max_l = max(len(cn1), len(cn2))
     length_ratio = min(len(cn1), len(cn2)) / max_l if max_l > 0 else 0.0
     token_count_diff = float(abs(len(words1) - len(words2)))
+
+    # 6. Legal entity stem & exact compound matches
+    stem1 = strip_legal_suffixes(cn1)
+    stem2 = strip_legal_suffixes(cn2)
+    name_legal_stem_exact = 1.0 if stem1 and stem2 and stem1 == stem2 else 0.0
+    name_legal_stem_ratio = float(fuzz.token_sort_ratio(stem1, stem2)) if stem1 and stem2 else float(name_token_sort_ratio)
+
+    first_two_words_match = 1.0 if (len(words1) >= 2 and len(words2) >= 2 and words1[:2] == words2[:2]) else 0.0
+    exact_name_and_addr = 1.0 if (cn1 == cn2 and ca1 == ca2 and len(cn1) > 0) else 0.0
+
+    # 7. Disjoint name / missing address discriminators
+    is_latin_disjoint = 1.0 if (is_latin_text(cn1) and is_latin_text(cn2) and name_token_set_ratio < 45 and not name_domain_match) else 0.0
+    high_name_no_addr = 1.0 if (addr_empty_c == 1.0 and (name_legal_stem_exact == 1.0 or name_token_sort_ratio >= 90)) else 0.0
 
     return [
         float(name_ratio),
@@ -154,7 +208,15 @@ def extract_pair_features_fast(s1_item, c_item, cid: str, blocking_score: float,
         length_ratio,
         addr_ratio,
         addr_num_exact,
-        token_count_diff
+        token_count_diff,
+        name_legal_stem_exact,
+        name_legal_stem_ratio,
+        addr_char_3gram_jaccard,
+        postal_code_match,
+        first_two_words_match,
+        exact_name_and_addr,
+        is_latin_disjoint,
+        high_name_no_addr
     ]
 
 # Backward compatibility alias

@@ -32,8 +32,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Load LightGBM model once at startup
-MODEL_PATH = os.path.join(CODE_DIR, "models", "matching_lgbm.txt")
+# Load trained model once at startup (prefer XGBoost GPU model if available)
+XGB_PATH = os.path.join(CODE_DIR, "models", "matching_xgb.json")
+LGB_PATH = os.path.join(CODE_DIR, "models", "matching_lgbm.txt")
+MODEL_PATH = XGB_PATH if os.path.isfile(XGB_PATH) else LGB_PATH
 THRESHOLD_PATH = os.path.join(CODE_DIR, "models", "threshold.txt")
 
 threshold = 0.65
@@ -47,7 +49,7 @@ if os.path.isfile(THRESHOLD_PATH):
 model = MatchingModel(threshold=threshold)
 if os.path.isfile(MODEL_PATH):
     model.load(MODEL_PATH)
-    print(f"Loaded LightGBM model from {MODEL_PATH} (Threshold: {threshold})")
+    print(f"Loaded matching model from {MODEL_PATH} (Threshold: {threshold})")
 else:
     print(f"Warning: Model file not found at {MODEL_PATH}")
 
