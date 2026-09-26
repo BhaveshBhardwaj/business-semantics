@@ -20,7 +20,7 @@ def preprocess_for_tfidf(name: str, addr: str) -> str:
     return make_tfidf_doc(cn, ca)
 
 class BlockingEngine:
-    def __init__(self, top_k: int = 8, min_score: float = 0.15, max_features: int = 2**19):
+    def __init__(self, top_k: int = 8, min_score: float = 0.008, max_features: int = 2**19):
         self.top_k = top_k
         self.min_score = min_score
         self.max_features = max_features
@@ -97,15 +97,18 @@ class BlockingEngine:
 
                 words = set(w for w in cn.split() if w not in STOP_WORDS and len(w) >= 3)
                 for w in words:
-                    if 1 <= word_freq[w] <= 80:
+                    if 1 <= word_freq[w] <= 60:
                         self.selective_name_index[w].append(cid)
 
             if ca:
                 nums = extract_numbers(ca)
-                words = [w for w in ca.split() if w not in STOP_WORDS and len(w) >= 4]
+                words = [w for w in ca.split() if w not in STOP_WORDS and len(w) >= 3]
                 for num in nums:
-                    for w in words[:4]:
-                        self.addr_anchor_index[(num, w)].append(cid)
+                    if len(num) >= 2:
+                        for w in words[:6]:
+                            bucket = self.addr_anchor_index[(num, w)]
+                            if len(bucket) < 30:
+                                bucket.append(cid)
 
     def query_batch(self, s1_records_or_ids: list, s1_docs: list = None, s1_precleaned: dict = None, batch_size: int = 10000):
         """
@@ -212,15 +215,17 @@ class BlockingEngine:
 
                     # 4. Address Anchors (number + street token match for corrupted/empty names)
                     if hasattr(self, 'addr_anchor_index') and ca1:
-                        addr_words = [w for w in ca1.split() if w not in STOP_WORDS and len(w) >= 4]
+                        addr_words = [w for w in ca1.split() if w not in STOP_WORDS and len(w) >= 3]
                         for num in nums1:
-                            for w in addr_words[:4]:
+                            for w in addr_words[:8]:
                                 m_cids = self.addr_anchor_index.get((num, w), [])
                                 if len(m_cids) <= 30:  # selective anchor only
                                     for cid in m_cids:
                                         if cid not in seen_cids:
                                             top_cands.append((cid, 0.80, 2))
                                             seen_cids.add(cid)
+
+
 
                 results[s1_id] = top_cands
 

@@ -152,7 +152,7 @@ def run_pipeline(test_dir: str, output_dir: str, model_path: str, threshold: flo
         # 2. Build Blocking Index for this country using generator
         print(f"[{country}] Fitting TF-IDF Blocking Index...", flush=True)
         t_fit = time.time()
-        blocking = BlockingEngine(top_k=top_k, min_score=0.03)
+        blocking = BlockingEngine(top_k=top_k, min_score=0.008)
         
         def cand_doc_generator():
             for cid in cand_ids:
@@ -265,12 +265,7 @@ def _process_batch_fast(s1_batch, blocking, cand_records, matching_model, thresh
 
         for (s1_id, cid), prob, feat in zip(all_pairs, probs, feature_rows):
             if prob >= threshold:
-                # Precision safeguard: reject spurious address-only matches with completely disjoint names
-                if feat[34] == 1.0:
-                    continue
-                if feat[5] == 0 and feat[1] < 55 and feat[20] < 0.35:
-                    continue
-                # Reject geographical postal code conflicts unless exact name match
+                # Reject explicit geographical postal code conflicts unless exact name match
                 if feat[5] == 0 and feat[31] == -1.0 and feat[1] < 90:
                     continue
                 match_dict[s1_id].append(cid)

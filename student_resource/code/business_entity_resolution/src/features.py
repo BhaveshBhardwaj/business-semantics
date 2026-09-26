@@ -177,8 +177,13 @@ def extract_pair_features_fast(s1_item, c_item, cid: str, blocking_score: float,
     exact_name_and_addr = 1.0 if (cn1 == cn2 and ca1 == ca2 and len(cn1) > 0) else 0.0
 
     # 7. Disjoint name / missing address discriminators
-    is_latin_disjoint = 1.0 if (is_latin_text(cn1) and is_latin_text(cn2) and name_token_set_ratio < 45 and not name_domain_match) else 0.0
-    high_name_no_addr = 1.0 if (addr_empty_c == 1.0 and (name_legal_stem_exact == 1.0 or name_token_sort_ratio >= 90)) else 0.0
+    is_latin_disjoint = 1.0 if (
+        is_latin_text(cn1) and is_latin_text(cn2)
+        and name_token_set_ratio < 45
+        and not name_domain_match
+        and (addr_token_set_ratio < 75 or num_conflict > 0.0)
+    ) else 0.0
+    high_name_no_addr = 1.0 if (addr_empty_c == 1.0 and (name_legal_stem_exact == 1.0 or name_token_sort_ratio >= 85 or name_token_set_ratio >= 85)) else 0.0
 
     return [
         float(name_ratio),

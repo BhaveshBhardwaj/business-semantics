@@ -126,8 +126,10 @@ def main():
                         help="Fraction of entities for validation (default: 5%%)")
     parser.add_argument("--top-k", type=int, default=40,
                         help="Blocking top-K candidates per query (default: 40)")
-    parser.add_argument("--min-score", type=float, default=0.02,
-                        help="Minimum blocking cosine score (default: 0.02)")
+    parser.add_argument("--min-score", type=float, default=0.008,
+                        help="Minimum blocking cosine score (default: 0.008)")
+    parser.add_argument("--train-max-negs", type=int, default=4,
+                        help="Max hard negative candidates per entity in training split (default: 4, 8x faster training & low RAM)")
     parser.add_argument("--max-cands", type=int, default=500000,
                         help="Max background candidate records to load (default: 500K, GT always loaded)")
     parser.add_argument("--num-rounds", type=int, default=2000,
@@ -397,10 +399,17 @@ def main():
                 s1_item = s1_precleaned[s1_id]
 
                 retrieved_ids = set()
+                negs_count = 0
                 for cid, score, rank in cands:
                     if cid in cand_records:
                         retrieved_ids.add(cid)
-                        label = 1 if cid in true_set else 0
+                        is_pos = (cid in true_set)
+                        if is_training and not is_pos:
+                            if args.train_max_negs > 0 and negs_count >= args.train_max_negs:
+                                continue
+                            negs_count += 1
+
+                        label = 1 if is_pos else 0
                         c_item = cand_records[cid]
                         feat = extract_pair_features_fast(s1_item, c_item, cid, score, rank)
                         cX.append(feat)
@@ -488,7 +497,7 @@ def main():
                 'device': 'cuda',
                 'tree_method': 'hist',
                 'objective': 'binary:logistic',
-                'eval_metric': ['logloss', 'auc'],
+                'eval_metric': 'auc',
                 'learning_rate': 0.05,
                 'max_depth': 8,
                 'min_child_weight': 20,
